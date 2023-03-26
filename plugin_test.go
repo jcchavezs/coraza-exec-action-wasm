@@ -27,6 +27,4 @@ func TestExec(t *testing.T) {
 	tx.ProcessResponseHeaders(200, "HTTP/1.1")
 	tx.ProcessLogging()
 	tx.Close()
-
-	t.Fail()
 }
