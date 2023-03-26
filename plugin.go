@@ -46,6 +46,8 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 		return err
 	}
 
+	// TODO(jcchavezs): Should I reuse this module given that the request is keeping
+	// some values in memory to send them back from guest to host?
 	mod, err := r.Instantiate(ctx, wasmSrc)
 	if err != nil {
 		return fmt.Errorf("failed to instansiate wasm script: %v", err)
@@ -55,7 +57,9 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 	if e.Function == nil {
 		return fmt.Errorf("failed to find exported function 'run'")
 	}
-	// TODO(jcchavezs): should I make the memory stateful?
+	// TODO(jcchavezs):
+	// - should I make the memory stateful?
+	// - how do I clean the memory after the request is gone?
 	e.Memory = mod.Memory()
 
 	return nil
