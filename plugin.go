@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"unsafe"
 
-	"github.com/corazawaf/coraza/v3/experimental/plugins"
-	"github.com/corazawaf/coraza/v3/rules"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+
+	"github.com/corazawaf/coraza/v3/experimental/plugins"
+	"github.com/corazawaf/coraza/v3/rules"
 )
 
 func init() {
@@ -24,6 +27,7 @@ func newExec() rules.Action {
 
 type Exec struct {
 	api.Function
+	api.Memory
 }
 
 func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
@@ -38,7 +42,9 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 	ctx := context.Background()
 	r := wazero.NewRuntime(ctx)
 
-	wasi_snapshot_preview1.MustInstantiate(ctx, r)
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
+		return err
+	}
 
 	mod, err := r.Instantiate(ctx, wasmSrc)
 	if err != nil {
@@ -49,19 +55,42 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 	if e.Function == nil {
 		return fmt.Errorf("failed to find exported function 'run'")
 	}
+	// TODO(jcchavezs): should I make the memory stateful?
+	e.Memory = mod.Memory()
 
 	return nil
 }
 
-func (e *Exec) Evaluate(r rules.RuleMetadata, tx rules.TransactionState) {
+func (e *Exec) Evaluate(_ rules.RuleMetadata, tx rules.TransactionState) {
 	results, err := e.Function.Call(context.Background())
 	if err != nil {
 		tx.DebugLogger().Error().Err(err).Msg("exec plugin failed")
 	}
 
-	tx.DebugLogger().Trace().Msg(fmt.Sprintf("%v", results))
+	if len(results) != 1 {
+		tx.DebugLogger().Error().Msg("exec plugin failed, no results")
+		return
+	}
+
+	execOutputPtr := uint32(results[0] >> 32)
+	execOutputSize := uint32(results[0])
+	execOutput, ok := e.Memory.Read(execOutputPtr, execOutputSize)
+	if !ok {
+		tx.DebugLogger().Error().Msg("exec plugin failed, could not read output")
+		return
+	}
+	tx.DebugLogger().Trace().Msg(string(execOutput))
 }
 
 func (e *Exec) Type() rules.ActionType {
 	return rules.ActionTypeNondisruptive
+}
+
+func ptrToString(ptr uint32, size uint32) (ret string) {
+	// Here, we want to get a string represented by the ptr and size. If we
+	// wanted a []byte, we'd use reflect.SliceHeader instead.
+	strHdr := (*reflect.StringHeader)(unsafe.Pointer(&ret))
+	strHdr.Data = uintptr(ptr)
+	strHdr.Len = int(size)
+	return
 }

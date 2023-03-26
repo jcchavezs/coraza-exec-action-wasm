@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 )
 
@@ -17,8 +18,6 @@ var golangCILintVer = "v1.48.0" // https://github.com/golangci/golangci-lint/rel
 var gosImportsVer = "v0.1.5"    // https://github.com/rinchsan/gosimports/releases/tag/v0.1.5
 
 var errRunGoModTidy = errors.New("go.mod/sum not formatted, commit changes")
-var errNoGitDir = errors.New("no .git directory found")
-var errUpdateGeneratedFiles = errors.New("generated files need to be updated")
 
 // Format formats code in this repository.
 func Format() error {
@@ -54,12 +53,17 @@ func Lint() error {
 	return nil
 }
 
-// Test runs all tests.
-func Test() error {
+func Generate() error {
 	if err := sh.RunV("go", "generate", "./..."); err != nil {
 		return err
 	}
 
+	return sh.RunV("wasm2wat", "./testdata/hello-world.wasm", "--output=./testdata/hello-world.wat")
+}
+
+// Test runs all tests.
+func Test() error {
+	mg.SerialDeps(Generate)
 	if err := sh.RunV("go", "test", "./..."); err != nil {
 		return err
 	}

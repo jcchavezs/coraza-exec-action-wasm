@@ -4,8 +4,9 @@ package exec
 import (
 	"testing"
 
-	"github.com/corazawaf/coraza/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/corazawaf/coraza/v3"
 )
 
 func TestExec(t *testing.T) {
@@ -14,7 +15,7 @@ func TestExec(t *testing.T) {
 			WithDirectives(`
 			SecRuleEngine ON
 			SecDebugLog /dev/stdout
-			SecDebugLogLevel 1
+			SecDebugLogLevel 9
 			SecRule RESPONSE_STATUS "@streq 200" "phase:3,exec:./testdata/hello-world.wasm"
 		`),
 	)
