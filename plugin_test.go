@@ -16,7 +16,7 @@ func TestExec(t *testing.T) {
 			SecRuleEngine ON
 			SecDebugLog /dev/stdout
 			SecDebugLogLevel 9
-			SecRule RESPONSE_STATUS "@streq 200" "phase:3,exec:./testdata/hello-world.wasm"
+			SecRule RESPONSE_STATUS "@streq 200" "phase:3,id:123,exec:./testdata/hello-world.wasm"
 		`),
 	)
 	require.NoError(t, err)
@@ -27,4 +27,7 @@ func TestExec(t *testing.T) {
 	tx.ProcessResponseHeaders(200, "HTTP/1.1")
 	tx.ProcessLogging()
 	tx.Close()
+
+	// TODO(jcchavezs): need to do more assertions but for that I need
+	// to be able to write the exec output to the transaction.
 }

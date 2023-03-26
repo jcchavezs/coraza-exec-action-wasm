@@ -1,11 +1,18 @@
 package main
 
-import "unsafe"
+import (
+	"os"
+	"unsafe"
+)
 
-//export run
-func run() uint64 {
-	ptr, size := stringToPtr("Hello world!")
-	return (uint64(ptr) << 32) | uint64(size)
+//export exec
+func exec() uint64 {
+	os.Stdout.WriteString("This log shows up as DEBUG level!")
+
+	outputPtr, outputSize := stringToPtr("Hello world!")
+	// TODO(jcchavezs): Should I export this function in the main package
+	// so userland code does not do copy-pasta?
+	return (uint64(outputPtr) << 32) | uint64(outputSize)
 }
 
 // main is required for the `wasi` target, even if it isn't used.

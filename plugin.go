@@ -3,15 +3,12 @@ package exec
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
-	"reflect"
-	"unsafe"
 
 	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 
+	"github.com/corazawaf/coraza/v3/debuglog"
 	"github.com/corazawaf/coraza/v3/experimental/plugins"
 	"github.com/corazawaf/coraza/v3/rules"
 )
@@ -26,8 +23,8 @@ func newExec() rules.Action {
 }
 
 type Exec struct {
-	api.Function
-	api.Memory
+	wazero.CompiledModule
+	wazero.Runtime
 }
 
 func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
@@ -46,55 +43,67 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 		return err
 	}
 
-	// TODO(jcchavezs): Should I reuse this module given that the request is keeping
-	// some values in memory to send them back from guest to host?
-	mod, err := r.Instantiate(ctx, wasmSrc)
+	cm, err := r.CompileModule(ctx, wasmSrc)
 	if err != nil {
-		return fmt.Errorf("failed to instansiate wasm script: %v", err)
+		return err
 	}
 
-	e.Function = mod.ExportedFunction("run")
-	if e.Function == nil {
-		return fmt.Errorf("failed to find exported function 'run'")
-	}
-	// TODO(jcchavezs):
-	// - should I make the memory stateful?
-	// - how do I clean the memory after the request is gone?
-	e.Memory = mod.Memory()
+	e.CompiledModule = cm
+	e.Runtime = r
 
 	return nil
 }
 
-func (e *Exec) Evaluate(_ rules.RuleMetadata, tx rules.TransactionState) {
-	results, err := e.Function.Call(context.Background())
+func (e *Exec) Evaluate(r rules.RuleMetadata, tx rules.TransactionState) {
+	logger := tx.DebugLogger().With(
+		debuglog.Str("action", "exec"),
+		debuglog.Int("rule_id", r.ID()),
+	)
+	ctx := context.Background()
+
+	m, err := e.Runtime.InstantiateModule(
+		ctx,
+		e.CompiledModule,
+		wazero.NewModuleConfig().
+			WithStderr(errWriter{logger}).
+			WithStdout(outWriter{logger}),
+	)
 	if err != nil {
-		tx.DebugLogger().Error().Err(err).Msg("exec plugin failed")
+		logger.Error().Err(err).Msg("Action failed")
+	}
+
+	defer func() {
+		_ = m.Close(ctx)
+	}()
+
+	results, err := m.ExportedFunction("exec").Call(ctx)
+	if err != nil {
+		logger.Error().Err(err).Msg("Action failed")
+		return
 	}
 
 	if len(results) != 1 {
-		tx.DebugLogger().Error().Msg("exec plugin failed, no results")
+		logger.Error().Msg("Action failed with unexpected number of results")
 		return
 	}
 
-	execOutputPtr := uint32(results[0] >> 32)
 	execOutputSize := uint32(results[0])
-	execOutput, ok := e.Memory.Read(execOutputPtr, execOutputSize)
-	if !ok {
-		tx.DebugLogger().Error().Msg("exec plugin failed, could not read output")
-		return
+	if execOutputSize == 0 {
+		logger.Debug().Msg("Action finished with no ouput")
+	} else {
+		execOutputPtr := uint32(results[0] >> 32)
+		execOutput, ok := m.Memory().Read(execOutputPtr, execOutputSize)
+		if !ok {
+			logger.Error().Msg("Action failed as could not read output")
+			return
+		}
+
+		// Displaying this in logger for now. We should be able to record
+		// the exec output into the transaction itself.
+		logger.Trace().Str("exec_ouput", string(execOutput)).Msg("Action finished")
 	}
-	tx.DebugLogger().Trace().Msg(string(execOutput))
 }
 
 func (e *Exec) Type() rules.ActionType {
 	return rules.ActionTypeNondisruptive
-}
-
-func ptrToString(ptr uint32, size uint32) (ret string) {
-	// Here, we want to get a string represented by the ptr and size. If we
-	// wanted a []byte, we'd use reflect.SliceHeader instead.
-	strHdr := (*reflect.StringHeader)(unsafe.Pointer(&ret))
-	strHdr.Data = uintptr(ptr)
-	strHdr.Len = int(size)
-	return
 }
