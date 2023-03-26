@@ -36,6 +36,7 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 	if err != nil {
 		return err
 	}
+
 	ctx := context.Background()
 	r := wazero.NewRuntime(ctx)
 
@@ -43,6 +44,8 @@ func (e *Exec) Init(rm rules.RuleMetadata, opts string) error {
 		return err
 	}
 
+	// We compile the module here and instantiate the module on every request
+	// as memory needs to be
 	cm, err := r.CompileModule(ctx, wasmSrc)
 	if err != nil {
 		return err
@@ -70,6 +73,7 @@ func (e *Exec) Evaluate(r rules.RuleMetadata, tx rules.TransactionState) {
 	)
 	if err != nil {
 		logger.Error().Err(err).Msg("Action failed")
+		return
 	}
 
 	defer func() {
