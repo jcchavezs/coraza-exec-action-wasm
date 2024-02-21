@@ -1,13 +1,15 @@
 package main
 
 import (
-	"os"
 	"unsafe"
+
+	"github.com/corazawaf/coraza/v3/debuglog"
+	"github.com/jcchavezs/coraza-exec-wasm/guest/tinygo/handler"
 )
 
 //export exec
 func exec() uint64 {
-	os.Stdout.WriteString("This log shows up as DEBUG level!")
+	handler.TxLog(debuglog.LevelDebug, "This log shows up as DEBUG level!")
 
 	outputPtr, outputSize := stringToPtr("Hello world!")
 	// TODO(jcchavezs): Should I export this function in the main package
